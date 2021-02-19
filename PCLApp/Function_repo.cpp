@@ -75,7 +75,7 @@ float C=0.0;
 float D=0.0;
 int main()
 {   
-	const string cloudname = "triangle2.pcd";  // add the cropped cloud
+	const string cloudname = "vertical_tria.pcd";  // add the cropped cloud
 	pcl::PointCloud<pcl::PointXYZ>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZ>);
 	if (pcl::io::loadPCDFile<pcl::PointXYZ>(cloudname, *cloud) == -1)
 	{
@@ -84,8 +84,33 @@ int main()
 	}
 	std::cout << "Loaded " << cloud->size() << " data points from: " << cloudname << std::endl;
 
+	// 切割点云
+	float x_min = -2;
+	float y_min = -2;
+	float z_min = -38;
+	float x_max = 10;
+	float y_max = 10;
+	float z_max = -30;
+
+	pcl::CropBox<pcl::PointXYZ> clipper;
+	//pcl::PointCloud<pcl::PointXYZ>::Ptr body{ new pcl::PointCloud<pcl::PointXYZ> };
+	pcl::PointCloud<pcl::PointXYZ>::Ptr filtered_body{ new pcl::PointCloud<pcl::PointXYZ> };//指针还是对象，有时候只能指针，有时候都行。报错就换。
+	pcl::CropBox<pcl::PointXYZ> box_filter;//滤波器对象
+	box_filter.setMin(Eigen::Vector4f(x_min, y_min, z_min, 1.0));//Min和Max是指立方体的两个对角点。每个点由一个四维向量表示，通常最后一个是1.（
+	box_filter.setMax(Eigen::Vector4f(x_max, y_max, z_max, 1.0));
+	clipper.setNegative(false);//是保留立方体内的点而去除其他点，还是反之。false是将盒子内的点去除，默认为false
+	box_filter.setInputCloud(cloud);//输入源
+	box_filter.filter(*filtered_body);//滤它！
+	cout << "started to show" << endl;
+	multiviewerndt(filtered_body, filtered_body);
+
+	cout << "finished" << endl;
+	cout << "finished" << endl;
+
+
+
+
 	findplane(cloud);
-	
 	// cloud transform accouding to surface
 	
 	Eigen::Matrix4f transform_1 = Eigen::Matrix4f::Identity();
