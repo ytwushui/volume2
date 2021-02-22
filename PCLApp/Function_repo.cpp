@@ -10,80 +10,171 @@
 #include<pcl\filters\approximate_voxel_grid.h>
 #include<pcl\registration\ndt.h>
 #include<boost/thread/thread.hpp>
+#include <vtkPLYReader.h>
+#include <vtkTriangleFilter.h>
+#include <vtkSmartPointer.h>
+#include <vtkMassProperties.h>
 using namespace std;
 
-int plctopcd(string type, string file);
-int user_data;
 int multiviewerndt(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud1, pcl::PointCloud<pcl::PointXYZ>::Ptr cloud2);
-void viewerOneOff(pcl::visualization::PCLVisualizer& viewer)
-{
-	
-	viewer.setBackgroundColor(0, 0, 0.7);
-	pcl::PointXYZ o;
-	o.x = 1.0;
-	o.y = 0;
-	o.z = 0;
-	viewer.addSphere(o, 0.25, "sphere", 0);
-	std::cout << "i only run once" << std::endl;
-
-}
-
-void viewerPsycho(pcl::visualization::PCLVisualizer& viewer)
-{
-	static unsigned count = 0;
-	std::stringstream ss;
-	ss << "Once per viewer loop: " << count++;
-	viewer.removeShape("text", 0);
-	viewer.addText(ss.str(), 200, 300, "text", 0);
-
-	//FIXME: possible race condition here:
-	user_data++;
-}
-
-void getFiles1(string path, vector<string>& files)
-{
-	//文件句柄  
-	//long hFile = 0;  //win7
-	intptr_t hFile = 0;   //win10
-	//文件信息  
-	struct _finddata_t fileinfo;
-	string p;
-	if ((hFile = _findfirst(p.assign(path).append("\\*").c_str(), &fileinfo)) != -1)
-		// "\\*"是指读取文件夹下的所有类型的文件，若想读取特定类型的文件，以png为例，则用“\\*.png”
-	{
-		do
-		{
-			//如果是目录,迭代之  
-			//如果不是,加入列表  
-			if ((fileinfo.attrib & _A_SUBDIR))
-			{
-				if (strcmp(fileinfo.name, ".") != 0 && strcmp(fileinfo.name, "..") != 0)
-					getFiles1(p.assign(path).append("\\").append(fileinfo.name), files);
-			}
-			else
-			{
-				files.push_back(path + "\\" + fileinfo.name);
-			}
-		} while (_findnext(hFile, &fileinfo) == 0);
-		_findclose(hFile);
-	}
-}
 int findplane(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud);
-float A=0.0;
-float B=0.0;
-float C=0.0;
-float D=0.0;
+//transform_1(2, 0) =-0.135176; transform_1(2, 1) = 0.0436936; transform_1(2, 2) = 0.985858; transform_1(2, 3) = 38.0787;
+float A= -0.135176;
+float B= 0.0436936;
+float C= 0.985858;
+float D= 38.0787;
+
+class Volume
+{
+public:
+	float A = 0.0;
+	float B = 0.0;
+	float C = 0.0;
+	float D = 0.0;
+	double CalcualteV(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud);
+	double CalcualteV2(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud);
+	const int nx = 1000;
+	const int ny = 1000;
+private:
+
+};
+double Volume::CalcualteV(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud)
+{
+	Eigen::Matrix4f transform_1 = Eigen::Matrix4f::Identity();
+	//transform_1(2, 0) =-0.135176; transform_1(2, 1) = 0.0436936; transform_1(2, 2) = 0.985858; transform_1(2, 3) = 38.0787;
+	transform_1(2, 0) = A;
+	transform_1(2, 1) = B;
+	transform_1(2, 2) = C;
+	transform_1(2, 3) = D;
+	//    (row, column)
+	// Print the transformation  
+	std::cout << "Method #1: using a Matrix4f\n" << endl;
+	std::cout << transform_1 << std::endl;
+
+	// Executing the transformation
+	pcl::PointCloud<pcl::PointXYZ>::Ptr transformed_cloud(new pcl::PointCloud<pcl::PointXYZ>());
+
+	pcl::transformPointCloud(*cloud, *transformed_cloud, transform_1);
+	//multiviewerndt(cloud, transformed_cloud); 
+
+
+	pcl::PointXYZ min;//用于存放三个轴的最小值
+	pcl::PointXYZ max;//用于存放三个轴的最大值
+	pcl::getMinMax3D(*cloud, min, max);
+
+	int t_num = transformed_cloud->points.size();
+	float total = 0;
+	for (int i = 0; i < t_num; ++i)
+	{
+		total += transformed_cloud->points[i].z;
+
+
+	}
+	float s_area = (max.x - min.x) * (max.y - min.y);
+	float volume = total / t_num * s_area;
+	cout << "Calculated Volume: (cm^3) " << volume * 1000 << endl;
+	cout << "Calculated Volume: (m^3) " << volume / 1000 << endl;
+
+
+	return volume;
+}
+
+
+double Volume::CalcualteV2(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud)
+{
+
+	Eigen::Matrix4f transform_1 = Eigen::Matrix4f::Identity();
+	//transform_1(2, 0) =-0.135176; transform_1(2, 1) = 0.0436936; transform_1(2, 2) = 0.985858; transform_1(2, 3) = 38.0787;
+	transform_1(2, 0) = A;
+	transform_1(2, 1) = B;
+	transform_1(2, 2) = C;
+	transform_1(2, 3) = D;
+	//    (row, column)
+	// Print the transformation  
+	std::cout << "Method #1: using a Matrix4f\n" << endl;
+	std::cout << transform_1 << std::endl;
+
+	// Executing the transformation
+	pcl::PointCloud<pcl::PointXYZ>::Ptr transformed_cloud(new pcl::PointCloud<pcl::PointXYZ>());
+
+	pcl::transformPointCloud(*cloud, *transformed_cloud, transform_1);
+	//multiviewerndt(cloud, transformed_cloud); 
+
+
+	pcl::PointXYZ min;//用于存放三个轴的最小值
+	pcl::PointXYZ max;//用于存放三个轴的最大值
+	pcl::getMinMax3D(*cloud, min, max);
+	
+	//start to mesh the pcl
+	const int nsize = 150;
+	int ncount[nsize][nsize] = { {0} };
+	double grid[nsize][nsize] = { {0} };
+	double dx = (max.x - min.x) / nsize;
+	double dy = (max.y - min.y) / nsize;
+	int t_num = transformed_cloud->points.size();
+	
+	for (int i = 0; i < t_num; ++i)
+	{
+		int j = int((transformed_cloud->points[i].x-min.x)/dx-0.001);
+		int k = int((transformed_cloud->points[i].y-min.y)/dy-0.001);
+		grid[j][k] += transformed_cloud->points[i].z;
+		ncount[j][k] += 1;
+		
+	}
+
+	double t2=0;
+	int ct=0;
+	double total = 0.0;
+	for (int i = 0; i < nsize; ++i) {
+		
+		for (int j = 0; j < nsize; ++j) {
+			if (ncount[i][j] != 0) {
+				total += grid[i][j] / ncount[i][j];
+				t2 += grid[i][j];
+				ct += ncount[i][j];
+			}
+			
+
+		}
+	}
+
+
+	float s_area = (max.x - min.x) * (max.y - min.y);
+	float volume = total * s_area / nsize / nsize;
+	cout << "Calculated Volume: (cm^3) " << volume * 1000 << endl;
+	cout << "Calculated Volume: (cm^3), t2     " << t2/t_num*s_area * 1000 << endl;
+	cout << ct << "==" << t_num << endl;
+	cout << "Calculated Volume: (m^3) " << volume / 1000 << endl;
+	return volume;
+}
+
 int main()
 {   
-	const string cloudname = "vertical_tria.pcd";  // add the cropped cloud
+	const string cloudname = "triangle2.pcd";  // add the cropped cloud
 	pcl::PointCloud<pcl::PointXYZ>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZ>);
 	if (pcl::io::loadPCDFile<pcl::PointXYZ>(cloudname, *cloud) == -1)
 	{
-		PCL_ERROR("Couldn't read file room_scan1.pcd \n");
+		PCL_ERROR("Couldn't read file xxxxxx.pcd \n");
 		return (-1);
 	}
 	std::cout << "Loaded " << cloud->size() << " data points from: " << cloudname << std::endl;
+	findplane(cloud);
+	Volume v;
+	v.A =A;
+	v.B = B;
+	v.C = C;
+	v.D = D;
+	float calculated_volume = v.CalcualteV(cloud);
+	float v2 = v.CalcualteV2(cloud);
 
+	cout <<"result using method1"<< calculated_volume/1000<< "m^3" << endl;
+	cout << "result using method2 "<<v2/1000  << " m^3" << endl;
+	
+	return 0;	
+	
+}
+
+int croppcl(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud) {
 	// 切割点云
 	float x_min = -2;
 	float y_min = -2;
@@ -106,64 +197,9 @@ int main()
 
 	cout << "finished" << endl;
 	cout << "finished" << endl;
-
-
-
-
-	findplane(cloud);
-	// cloud transform accouding to surface
-	
-	Eigen::Matrix4f transform_1 = Eigen::Matrix4f::Identity();
-	//transform_1(2, 0) =-0.135176; transform_1(2, 1) = 0.0436936; transform_1(2, 2) = 0.985858; transform_1(2, 3) = 38.0787;
-
-	transform_1(2, 0) =A;
-	transform_1(2, 1) = B;
-	transform_1(2, 2) = C;
-	transform_1(2, 3) = D;
-	//    (row, column)
-
-	// Print the transformation  
-	printf("Method #1: using a Matrix4f\n");
-	std::cout << transform_1 << std::endl;
-
-	// Executing the transformation
-	pcl::PointCloud<pcl::PointXYZ>::Ptr transformed_cloud(new pcl::PointCloud<pcl::PointXYZ>());
-	
-	pcl::transformPointCloud(*cloud, *transformed_cloud, transform_1);
-	//multiviewerndt(cloud, transformed_cloud); 
-	float xmin = transformed_cloud->points[0].x;
-	float ymin = transformed_cloud->points[0].y;
-	float xmax = transformed_cloud->points[0].x;
-	float ymax = transformed_cloud->points[0].y;
-	int t_num = transformed_cloud->points.size();
-	float total = 0;
-	for (int i = 0; i < t_num ; ++i)
-	{
-		total+= transformed_cloud->points[i].z;
-		if (xmin > transformed_cloud->points[i].x) {
-			xmin = transformed_cloud->points[i].x;
-		}
-		if (xmax < transformed_cloud->points[i].x) {
-			xmax = transformed_cloud->points[i].x;
-		}
-		if (ymin > transformed_cloud->points[i].y) {
-			ymin = transformed_cloud->points[i].y;
-		}
-		if (ymax < transformed_cloud->points[i].y) {
-			ymax = transformed_cloud->points[i].y;
-		}
-				
-	}
-	float s_area = (xmax - xmin) * (ymax - ymin);
-	float volume = total / t_num * s_area;
-	cout << "Calculated Volume: (cm^3) " << volume*1000 << endl;
-	cout << "Calculated Volume: (m^3) " << volume/1000 << endl;
 	return 0;
 	
-
-	
 }
-
 int findplane(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud) 
 {
 	cout << "find plan" << endl;
@@ -214,23 +250,11 @@ int findplane(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud)
 	return 1;
 
 }
-int findboundary(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_plane) {
-	//calculate boundary;
-	/*
-	pcl::PointCloud<pcl::Boundary> boundary;
-	pcl::BoundaryEstimation<pcl::PointXYZ, pcl::Normal, pcl::Boundary> est;
-	est.setInputCloud(cloud_plane);
-	est.setInputNormals(normals_plane);
-	est.setSearchMethod(tree_plane);
-	est.setKSearch(50); //一般这里的数值越高，最终边界识别的精度越好
-	pcl::search::KdTree<pcl::PointXYZ>));
-	est.compute(boundary);*/
-	return 0;
-}
+
 int multiviewerndt(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud1, pcl::PointCloud<pcl::PointXYZ>::Ptr cloud2) {
 	
 
-	cout << "show cloud" << endl;
+	cout << "Start to show cloud" << endl;
 	// 初始化点云可视化对象  // multi show 
 	boost::shared_ptr<pcl::visualization::PCLVisualizer>
 		viewer_final(new pcl::visualization::PCLVisualizer("3D Viewer"));
@@ -263,150 +287,4 @@ int multiviewerndt(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud1, pcl::PointCloud<p
 
 
 	return 0;
-}
-
-int plc_txt_to_pck(const char* open_txt , const char* save_pcd, string type)
-{
-	// 读取txt文件
-	int num_txt;
-	FILE* fp_txt;
-	
-	fp_txt = fopen(open_txt, "r");
-	pcl::PointCloud<pcl::PointXYZ> ::Ptr cloud(new pcl::PointCloud<pcl::PointXYZ>);
-
-	
-	
-	
-	
-	//定义一种类型表示TXT中xyz  xyz
-	if (type == "xyz") 
-	{
-
-		typedef struct TXT_Point_XYZ
-		{
-			double x;
-			double y;
-			double z;
-		}TOPOINT_XYZ;
-
-		TXT_Point_XYZ txt_points;
-		vector<TXT_Point_XYZ> my_vTxtPoints;
-		if (fp_txt)
-		{
-			// push all x y zs to the back of the container in the memory 
-			while (fscanf(fp_txt, "%lf %lf %lf", &txt_points.x, &txt_points.y, &txt_points.z) != EOF)
-			{//将点存入容器尾部
-				my_vTxtPoints.push_back(txt_points);
-			}
-		}
-		else
-			cout << "读取txt文件失败" << endl;
-
-		num_txt = my_vTxtPoints.size();
-		
-		//写入点云数据
-		// cloud is a pointer
-		
-		cloud->width = num_txt;
-		cloud->height = 1;
-		cloud->is_dense = false;
-		cloud->points.resize(cloud->width * cloud->height);
-		for (int i = 0; i < cloud->points.size(); ++i)
-		{
-			cloud->points[i].x = my_vTxtPoints[i].x;
-			cloud->points[i].y = my_vTxtPoints[i].y;
-			cloud->points[i].z = my_vTxtPoints[i].z;
-		}
-	}
-
-	pcl::io::savePCDFileASCII(save_pcd, *cloud);
-	cout << "从 txt_pcd.txt读取" << cloud->points.size() << "点写入txt_pcd.pcd" << endl;
-
-	//打印出写入的点
-	cout << "_________________________________" << endl;
-	for (size_t i = 0; i < 5; ++i)
-		//for (size_t i = 0; i < cloud->points.size(); ++i)
-		cout << "    " << cloud->points[i].x
-		<< " " << cloud->points[i].y
-		<< " " << cloud->points[i].z << endl;
-	cout << "转换txt文件成功" << endl;
-	return 0;
-	
-	
-}
-int plctopcd(string type, string file) {
-
-	
-	fstream modelRead;
-	pcl::PCDWriter writer;
-	modelRead.open(file, std::ios_base::in);
-	if (type == "xyz") 
-	{
-		pcl::PointCloud<pcl::PointXYZ> cloud;
-		pcl::PointXYZ pclPnt;
-		while (!modelRead.eof())
-		{
-			modelRead >> pclPnt.x >> pclPnt.y >> pclPnt.z;
-			cloud.push_back(pclPnt);
-			
-		}
-		modelRead.close();
-		
-		
-		string::size_type iPos = file.find_last_of('\\') + 1;
-		string filename = file.substr(iPos, file.length() - iPos);
-		cout << filename << endl;
-		string name = filename.substr(0, filename.rfind("."));
-		cout << name << endl;
-
-		writer.write("D:/pointcloud/testpcl/banocular_camera_test/"+name+".pcd", cloud);
-
-	}
-	else if (type == "xyznormal") {
-
-		//pcl::PointCloud<pcl::PointNormal>::Ptr cloud_with_normals(new pcl::PointCloud<pcl::PointNormal>);//带法线的点云
-		pcl::PointCloud<pcl::PointNormal> cloud_with_normals;
-		pcl::PointNormal pclPnt;
-		while (!modelRead.eof())
-		{
-			modelRead >> pclPnt.x >> pclPnt.y >> pclPnt.z >> pclPnt.normal_x >> pclPnt.normal_y >> pclPnt.normal_z;
-			cloud_with_normals.push_back(pclPnt);
-		}
-		modelRead.close();
-		string::size_type iPos = file.find_last_of('\\') + 1;
-		string filename = file.substr(iPos, file.length() - iPos);
-		cout << filename << endl;
-		string name = filename.substr(0, filename.rfind("."));
-		cout << name << endl;
-		writer.write("D:/pointcloud/testpcl/ "+name+".pcd", cloud_with_normals);
-		cout << "finish writing" << endl;
-		
-	}
-
-	
-	
-	return 0;
-	
-}
-const char* getfilename(const char p[]) 
-{
-	int x = strlen(p);
-	char ch = '\\';
-	const char* q = strrchr(p, ch) + 1;
-	return q;
-	/*
-
-	char path_buffer[_MAX_PATH] = "D:\\soft\\programming\\vmware.exe";
-	char drive[_MAX_DRIVE];
-	char dir[_MAX_DIR];
-	char fname[_MAX_FNAME];
-	char ext[_MAX_EXT];
-
-	_splitpath(path_buffer, drive, dir, fname, ext);
-
-	printf("Drive:%s\n file name: %s\n file type: %s\n", drive, fname, ext);
-	strcat(fname, ext);
-	printf("File name with extension :%s\n", fname);
-	
-	*/
 }
