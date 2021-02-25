@@ -14,15 +14,17 @@
 #include <vtkTriangleFilter.h>
 #include <vtkSmartPointer.h>
 #include <vtkMassProperties.h>
+#include <math.h>
 using namespace std;
 
 int multiviewerndt(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud1, pcl::PointCloud<pcl::PointXYZ>::Ptr cloud2);
 int findplane(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud);
 //transform_1(2, 0) =-0.135176; transform_1(2, 1) = 0.0436936; transform_1(2, 2) = 0.985858; transform_1(2, 3) = 38.0787;
-float A= -0.135176;
-float B= 0.0436936;
-float C= 0.985858;
-float D= 38.0787;
+// triangle2  -0.0526151  0.0518616   0.997267    36.0612
+float A= -0.0526151;
+float B= 0.0518616;
+float C= 0.997267;
+float D= 36.0612;
 
 class Volume
 {
@@ -103,21 +105,22 @@ double Volume::CalcualteV2(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud)
 
 	pcl::PointXYZ min;//用于存放三个轴的最小值
 	pcl::PointXYZ max;//用于存放三个轴的最大值
-	pcl::getMinMax3D(*cloud, min, max);
+	pcl::getMinMax3D(*transformed_cloud, min, max);
 	
 	//start to mesh the pcl
-	const int nsize = 150;
+	const int nsize = 100;
 	int ncount[nsize][nsize] = { {0} };
 	double grid[nsize][nsize] = { {0} };
 	double dx = (max.x - min.x) / nsize;
 	double dy = (max.y - min.y) / nsize;
 	int t_num = transformed_cloud->points.size();
-	
+	double grid2[nsize][nsize] = { {0} };
 	for (int i = 0; i < t_num; ++i)
 	{
 		int j = int((transformed_cloud->points[i].x-min.x)/dx-0.001);
 		int k = int((transformed_cloud->points[i].y-min.y)/dy-0.001);
 		grid[j][k] += transformed_cloud->points[i].z;
+		grid2[j][k] += (A * cloud->points[i].x + B * cloud->points[i].y + C * cloud->points[i].z + D) / sqrt(A * A + B * B + C * C);
 		ncount[j][k] += 1;
 		
 	}
@@ -125,26 +128,28 @@ double Volume::CalcualteV2(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud)
 	double t2=0;
 	int ct=0;
 	double total = 0.0;
+	double total2 = 0.0;
 	for (int i = 0; i < nsize; ++i) {
 		
 		for (int j = 0; j < nsize; ++j) {
-			if (ncount[i][j] != 0) {
+			if (ncount[i][j] != 0 && abs(grid[i][j] / ncount[i][j])>=0.2 && abs(grid2[i][j] / ncount[i][j])>=0.2) {
 				total += grid[i][j] / ncount[i][j];
+				total2 += grid2[i][j] / ncount[i][j];
 				t2 += grid[i][j];
 				ct += ncount[i][j];
 			}
-			
 
 		}
 	}
 
-
+	cout << max.z <<"  minz:  "<< min.z << endl;
 	float s_area = (max.x - min.x) * (max.y - min.y);
 	float volume = total * s_area / nsize / nsize;
+	float volume2 = total2 * s_area / nsize / nsize;
 	cout << "Calculated Volume: (cm^3) " << volume * 1000 << endl;
-	cout << "Calculated Volume: (cm^3), t2     " << t2/t_num*s_area * 1000 << endl;
-	cout << ct << "==" << t_num << endl;
-	cout << "Calculated Volume: (m^3) " << volume / 1000 << endl;
+	cout << "Calculated Volume22: (cm^3) " << volume2 * 1000 << endl;
+
+	
 	return volume;
 }
 
@@ -158,7 +163,7 @@ int main()
 		return (-1);
 	}
 	std::cout << "Loaded " << cloud->size() << " data points from: " << cloudname << std::endl;
-	findplane(cloud);
+	//findplane(cloud);
 	Volume v;
 	v.A =A;
 	v.B = B;
@@ -228,6 +233,7 @@ int findplane(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud)
 	seg.setNormalDistanceWeight(0.1);//设置表面法线权重系数
 	seg.setMethodType(pcl::SAC_RANSAC);//设置采用RANSAC作为算法的参数估计方法
 	seg.setMaxIterations(500); //设置迭代的最大次数
+	//   0.5
 	seg.setDistanceThreshold(0.5); //设置内点到模型的距离允许最大值
 	seg.setInputCloud(cloud);
 	seg.setInputNormals(normals);
